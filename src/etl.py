@@ -211,13 +211,18 @@ def _load_fact_file(con, flow: str, path: Path, encoding: str) -> int:
     return rows
 
 
-def _create_indexes_and_view(con) -> None:
-    con.execute(
-        """
+def _create_indexes_and_view(con, *, create_indexes: bool = True) -> None:
+    if create_indexes:
+        con.execute(
+            """
         CREATE INDEX IF NOT EXISTS idx_fact_year_month ON fact_comex (FLUXO, CO_ANO, CO_MES);
         CREATE INDEX IF NOT EXISTS idx_fact_ncm ON fact_comex (CO_NCM);
         CREATE INDEX IF NOT EXISTS idx_fact_country ON fact_comex (CO_PAIS);
+            """
+        )
 
+    con.execute(
+        """
         CREATE OR REPLACE VIEW vw_comex AS
         SELECT
             f.*,

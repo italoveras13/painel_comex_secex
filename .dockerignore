@@ -2,6 +2,7 @@
 __pycache__
 .git
 data/raw
+data/processed/comex.duckdb*
+!data/processed/comex_web.duckdb
 tests
 *.zip
-

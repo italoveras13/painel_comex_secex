@@ -12,6 +12,7 @@ das exportações aos Estados Unidos à ação da Seção 301 de julho de 2026.
 painel_comex_secex/
 ├── app.py
 ├── run_etl.py
+├── build_web_database.py        # gera a base agregada para publicação
 ├── requirements.txt
 ├── Dockerfile
 ├── .streamlit/config.toml
@@ -19,8 +20,8 @@ painel_comex_secex/
 │   ├── raw/
 │   │   ├── exp/                 # EXP_AAAA.csv
 │   │   ├── imp/                 # IMP_AAAA.csv
-│   │   └── aux/                 # TABELAS_AUXILIARES.xlsx e dados_calendario.xlsx
-│   └── processed/               # comex.duckdb (gerado)
+│   │   └── auxiliares/          # TABELAS_AUXILIARES.xlsx e dados_calendario.xlsx
+│   └── processed/               # comex.duckdb e comex_web.duckdb (gerados)
 ├── src/
 │   ├── auxiliary.py             # descoberta e normalização das planilhas
 │   ├── charts.py                # Plotly + fallback Matplotlib
@@ -115,6 +116,63 @@ streamlit run app.py
 
 O app abre por padrão em `http://localhost:8501`.
 
+### Banco reduzido para publicação
+
+Depois de concluir o ETL completo, gere uma base mensal agregada por fluxo,
+NCM e país:
+
+```bash
+python build_web_database.py
+```
+
+O comando cria `data/processed/comex_web.duckdb` sem alterar o
+`comex.duckdb`. Antes de concluir, o script compara os totais de quantidade,
+peso, FOB, frete e seguro entre os dois bancos. A saída informa a redução de
+linhas e tamanho e também indica se o arquivo cabe no GitHub comum, se exige
+Git LFS ou se permanece acima de 2 GB.
+
+Caso a saída já exista e precise ser refeita:
+
+```bash
+python build_web_database.py --force
+```
+
+Por padrão, a geração limita o DuckDB a 2 GB de memória e permite o uso de
+disco temporário. Em uma máquina com pouca memória, é possível reduzir esse
+limite; o processamento ficará mais demorado:
+
+```bash
+python build_web_database.py --force --memory-limit 1GB --threads 2
+```
+
+O aplicativo escolhe automaticamente `comex_web.duckdb` quando ele existe e
+volta ao banco completo quando não existe. A variável de ambiente
+`COMEX_DATABASE` pode apontar explicitamente para outro caminho.
+
+#### Envio ao GitHub
+
+Se o arquivo final tiver até 100 MB, use o Git normalmente. Entre 100 MB e
+2 GB, configure o Git LFS antes do commit:
+
+```bash
+git lfs install
+git lfs track "data/processed/comex_web.duckdb"
+git add .gitattributes data/processed/comex_web.duckdb
+git commit -m "Adiciona banco agregado para publicação"
+git push
+```
+
+Arquivos únicos acima de 2 GB não cabem no Git LFS dos planos GitHub Free e
+Pro. Nesse caso, não faça o commit do banco: use um volume persistente em uma
+plataforma como Railway/Render ou reduza adicionalmente a base.
+
+#### Streamlit Community Cloud
+
+Com o código e um banco compatível no GitHub, acesse `share.streamlit.io`,
+escolha o repositório, a branch e `app.py` como arquivo principal. O deploy
+instala as dependências de `requirements.txt` e disponibiliza uma URL
+`streamlit.app`.
+
 ## 3. Regra do gráfico histórico
 
 Para um ano selecionado `t`, a linha mostra os meses de `t`. A banda cinza usa,
@@ -158,6 +216,8 @@ uma VM. Para dezenas de milhões de linhas, uma VM/serviço com disco persistent
 
 ### Streamlit Community Cloud
 
-É adequado para demonstração se o repositório contiver apenas uma amostra ou um
-`comex.duckdb` agregado e de tamanho moderado. Não versione CSVs brutos grandes
-nem dados que não possam ser públicos.
+É adequado para demonstração se o repositório contiver apenas uma amostra ou o
+`comex_web.duckdb` de tamanho moderado. O suporte ao download de objetos Git LFS
+pode variar no ambiente de build; confira os logs do primeiro deploy. Se o
+arquivo não for materializado, use Railway/Render com volume ou armazenamento
+externo. Não versione CSVs brutos grandes nem dados que não possam ser públicos.

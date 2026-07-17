@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,7 +37,14 @@ from src.utils import MONTH_NAMES, format_compact
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DATABASE = PROJECT_DIR / "data" / "processed" / "comex.duckdb"
+FULL_DATABASE = PROJECT_DIR / "data" / "processed" / "comex.duckdb"
+WEB_DATABASE = PROJECT_DIR / "data" / "processed" / "comex_web.duckdb"
+DATABASE = Path(
+    os.environ.get(
+        "COMEX_DATABASE",
+        str(WEB_DATABASE if WEB_DATABASE.exists() else FULL_DATABASE),
+    )
+).expanduser().resolve()
 SECTION301_REFERENCE = PROJECT_DIR / "data" / "reference" / "section301_exemptions_sh6.csv"
 
 
@@ -832,6 +840,9 @@ def main() -> None:
         st.stop()
     db_version = database_token(DATABASE)
     state = _filters(db_version)
+    st.sidebar.caption(
+        f"Base ativa: {'web agregada' if DATABASE.name == 'comex_web.duckdb' else DATABASE.name}"
+    )
     _hero(state)
     tab_overview, tab_hierarchy, tab_countries, tab_balance, tab_section301, tab_quality = st.tabs(
         [

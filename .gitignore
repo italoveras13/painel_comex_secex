@@ -4,8 +4,12 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 data/processed/*.duckdb*
+!data/processed/comex_web.duckdb
 data/raw/exp/*.csv
 data/raw/imp/*.csv
 data/raw/aux/*.xlsx
+data/raw/auxiliares/*.xlsx
 !data/raw/**/.gitkeep
 
+# Pasta antiga incompatível com Windows
+data/raw/aux/
