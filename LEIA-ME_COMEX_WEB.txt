@@ -5,9 +5,9 @@ COMO GERAR O BANCO REDUZIDO PARA PUBLICAÇÃO
    data\processed\comex.duckdb
 
 2. Feche o Streamlit com Ctrl+C e, no PowerShell aberto na pasta do projeto,
-   execute:
+   execute (use --force se estiver atualizando uma versão anterior):
 
-   .\.venv\Scripts\python.exe build_web_database.py
+   .\.venv\Scripts\python.exe build_web_database.py --force
 
 3. Aguarde a mensagem "Validação concluída". Com uma base de 5 GB, a geração
    pode demorar e precisa de espaço livre para o novo banco e arquivos
@@ -16,6 +16,9 @@ COMO GERAR O BANCO REDUZIDO PARA PUBLICAÇÃO
 4. O resultado será:
 
    data\processed\comex_web.duckdb
+
+   A base web preserva agora a UF exportadora. Isso permite a nova análise por
+   estado na aba Seção 301. O comex.duckdb de 5 GB não é reprocessado.
 
 5. Confira o tamanho:
 

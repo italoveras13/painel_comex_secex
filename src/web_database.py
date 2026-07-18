@@ -70,7 +70,7 @@ def build_web_database(
     memory_limit: str = "2GB",
     threads: int = 4,
 ) -> WebDatabaseResult:
-    """Cria um DuckDB mensal agregado por fluxo, NCM e país.
+    """Cria um DuckDB mensal agregado por fluxo, NCM, país e UF.
 
     O arquivo completo nunca é modificado. A saída só substitui um arquivo
     existente quando ``force=True`` e depois que toda a validação termina.
@@ -135,7 +135,7 @@ def build_web_database(
         if source_rows == 0:
             raise RuntimeError("O banco completo não possui registros de comércio exterior.")
 
-        print(f"Agregando {source_rows:,} registros por fluxo, ano, mês, NCM e país...")
+        print(f"Agregando {source_rows:,} registros por fluxo, ano, mês, NCM, país e UF...")
         con.execute(
             """
             CREATE TABLE fact_comex AS
@@ -146,13 +146,14 @@ def build_web_database(
                     CO_MES,
                     CO_NCM,
                     CO_PAIS,
+                    coalesce(nullif(trim(SG_UF_NCM), ''), 'Não informado') AS SG_UF_NCM,
                     sum(QT_ESTAT) AS QT_ESTAT,
                     sum(KG_LIQUIDO) AS KG_LIQUIDO,
                     sum(VL_FOB) AS VL_FOB,
                     sum(VL_FRETE) AS VL_FRETE,
                     sum(VL_SEGURO) AS VL_SEGURO
                 FROM source_db.fact_comex
-                GROUP BY FLUXO, CO_ANO, CO_MES, CO_NCM, CO_PAIS
+                GROUP BY 1, 2, 3, 4, 5, 6
             )
             SELECT
                 FLUXO,
@@ -161,7 +162,7 @@ def build_web_database(
                 CO_NCM,
                 CAST(NULL AS VARCHAR) AS CO_UNID,
                 CO_PAIS,
-                CAST(NULL AS VARCHAR) AS SG_UF_NCM,
+                SG_UF_NCM,
                 CAST(NULL AS VARCHAR) AS CO_VIA,
                 CAST(NULL AS VARCHAR) AS CO_URF,
                 QT_ESTAT,
@@ -171,7 +172,7 @@ def build_web_database(
                 VL_SEGURO,
                 'COMEX_WEB_AGREGADO'::VARCHAR AS SOURCE_FILE
             FROM agregado
-            ORDER BY FLUXO, CO_ANO, CO_MES, CO_NCM, CO_PAIS
+            ORDER BY FLUXO, CO_ANO, CO_MES, CO_NCM, CO_PAIS, SG_UF_NCM
             """
         )
         for table in ("etl_files", "dim_ncm", "dim_country", "dim_unit", "dim_calendar_month"):
@@ -193,7 +194,7 @@ def build_web_database(
                 datetime.now(timezone.utc).replace(tzinfo=None),
                 str(source),
                 source_rows,
-                "FLUXO + CO_ANO + CO_MES + CO_NCM + CO_PAIS",
+                "FLUXO + CO_ANO + CO_MES + CO_NCM + CO_PAIS + SG_UF_NCM",
             ],
         )
 

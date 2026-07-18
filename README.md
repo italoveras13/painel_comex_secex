@@ -1,10 +1,20 @@
-# Painel SECEX em Streamlit
+# Painel do Comércio Exterior
 
 Aplicação para explorar arquivos brutos anuais de exportação e importação da
 SECEX/Comex Stat, com histórico mensal, banda de mínima/máxima dos cinco anos
 anteriores, média por dia útil, hierarquia de produtos, ranking de países e
 saldo comercial bilateral. Inclui também uma triagem indicativa da exposição
 das exportações aos Estados Unidos à ação da Seção 301 de julho de 2026.
+
+As principais telas analíticas incluem:
+
+- visão mensal com FOB, toneladas e valor médio em US$/kg, comparação anual,
+  média histórica e tabela mensal;
+- classificação com detalhamento dos principais NCM e parceiros de cada grupo;
+- países com abertura por setor, categoria de uso e NCM comercializado;
+- saldo bilateral com cartões responsivos, ranking de superávits e déficits;
+- painel temático da Seção 301 com gráficos dimensionados para leitura em
+  notebooks e monitores menores.
 
 ## Arquitetura
 
@@ -66,12 +76,25 @@ dígitos, mas seus desdobramentos nacionais não são equivalentes. Exceções
 baseadas em regimes dos capítulos 98/99 e condições de entrada não podem ser
 integralmente identificadas por SH6.
 
-A aba também traz uma análise de impacto por setor macro e por seção ISIC. Ela
-mostra o principal país cliente, a posição dos Estados Unidos entre os destinos,
-a participação dos EUA nas exportações do grupo, o valor sem correspondência de
-isenção e a exposição do setor (`valor potencialmente afetado / exportações
-mundiais do setor`). Assim, valor absoluto e dependência comercial podem ser
-avaliados separadamente.
+A aba temática foi organizada em seis subabas:
+
+- `Resumo executivo`: valor e tonelagem potencialmente afetados, exposição,
+  prioridades e ranking dos SH6;
+- `Setores e SH6`: análise por setor macro ou seção ISIC e detalhamento dos
+  SH6 mais expostos dentro de cada setor;
+- `Estados exportadores`: UFs com maior valor potencialmente afetado,
+  dependência dos EUA e participação no impacto nacional;
+- `Categoria de uso`: tabelas por CGCE — bens de capital, intermediários, de
+  consumo e combustíveis e lubrificantes — com abertura até o NCM;
+- `Produtos NCM`: triagem detalhada e exportação em CSV;
+- `Metodologia`: escopo, datas de referência e limitações do cruzamento SH6.
+
+A análise setorial mostra o principal país cliente, a posição dos Estados
+Unidos entre os destinos, a participação dos EUA nas exportações do grupo, o
+valor sem correspondência de isenção e a exposição do setor (`valor
+potencialmente afetado / exportações mundiais do setor`). Assim, valor absoluto
+e dependência comercial podem ser avaliados separadamente. Pesos físicos são
+apresentados em toneladas; `US$/kg` é mantido apenas como preço unitário.
 
 Para auditar ou refazer a extração com o PDF original:
 
@@ -119,7 +142,7 @@ O app abre por padrão em `http://localhost:8501`.
 ### Banco reduzido para publicação
 
 Depois de concluir o ETL completo, gere uma base mensal agregada por fluxo,
-NCM e país:
+NCM, país e UF exportadora:
 
 ```bash
 python build_web_database.py
@@ -136,6 +159,11 @@ Caso a saída já exista e precise ser refeita:
 ```bash
 python build_web_database.py --force
 ```
+
+Ao atualizar de uma versão anterior do projeto, execute esse comando uma vez.
+A UF passou a fazer parte da base web para permitir a análise dos estados
+exportadores na aba Seção 301. Isso recria somente o banco web e não refaz o ETL
+do `comex.duckdb` completo.
 
 Por padrão, a geração limita o DuckDB a 2 GB de memória e permite o uso de
 disco temporário. Em uma máquina com pouca memória, é possível reduzir esse

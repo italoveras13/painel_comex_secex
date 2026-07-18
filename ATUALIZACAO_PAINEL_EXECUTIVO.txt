@@ -1,0 +1,37 @@
+ATUALIZAÇÃO DO PAINEL EXECUTIVO — SEÇÃO 301 EUA
+
+Esta versão acrescenta:
+- resumo executivo para tomada de decisão;
+- detalhamento por setor macro e seção ISIC;
+- SH6 mais afetados dentro de cada setor;
+- estados exportadores mais expostos;
+- categorias de uso CGCE e abertura até o NCM;
+- pesos apresentados em toneladas;
+- metodologia e alertas sobre os limites do cruzamento SH6.
+
+COMO ATUALIZAR EM UMA MÁQUINA QUE JÁ POSSUI O BANCO COMPLETO
+
+1. Substitua os arquivos do projeto pelos arquivos desta versão.
+2. Não apague data\processed\comex.duckdb.
+3. Feche o site com Ctrl+C.
+4. Na pasta painel_comex_secex, execute:
+
+   .\.venv\Scripts\python.exe build_web_database.py --force
+
+Esse comando lê o comex.duckdb já pronto e recria somente o banco reduzido,
+preservando agora SG_UF_NCM. Não é necessário executar run_etl.py novamente.
+
+5. Limpe o cache e inicie o site:
+
+   .\.venv\Scripts\python.exe -m streamlit cache clear
+   .\.venv\Scripts\python.exe -m streamlit run app.py
+
+Se o site publicado usa o comex_web.duckdb do GitHub, envie também a nova
+versão desse arquivo após conferir o tamanho. Arquivos acima de 100 MB devem
+usar Git LFS; arquivos acima de 2 GB devem ficar em armazenamento persistente.
+
+NOTA METODOLÓGICA
+
+"Potencialmente afetado" indica ausência de correspondência de isenção no SH6
+da referência analisada. É uma triagem de risco comercial, não uma conclusão
+aduaneira ou jurídica sobre cada NCM.

@@ -13,7 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.etl import _create_indexes_and_view  # noqa: E402
-from src.queries import FilterState, country_ranking, hierarchy_table, summary_metrics  # noqa: E402
+from src.queries import (  # noqa: E402
+    FilterState,
+    country_composition,
+    country_ranking,
+    hierarchy_table,
+    monthly_history,
+    section301_state_impact,
+    summary_metrics,
+)
 from src.web_database import build_web_database  # noqa: E402
 
 
@@ -68,7 +76,15 @@ def main() -> None:
         _create_source(source)
         result = build_web_database(source, output, memory_limit="256MB", threads=1)
         assert result.source_rows == 4
-        assert result.web_rows == 3
+        assert result.web_rows == 4
+
+        con = duckdb.connect(str(output), read_only=True)
+        states = {
+            row[0]
+            for row in con.execute("SELECT DISTINCT SG_UF_NCM FROM fact_comex").fetchall()
+        }
+        con.close()
+        assert states == {"GO", "MG", "SP"}
 
         state = FilterState(flow="EXP", year=2026, months=(1,))
         source_summary = summary_metrics(source, state)
@@ -86,6 +102,20 @@ def main() -> None:
         assert source_ranking[["CO_PAIS", "VALOR"]].equals(
             web_ranking[["CO_PAIS", "VALOR"]]
         )
+        composition = country_composition(output, state, "249", "SETOR").set_index("CODIGO")
+        assert composition.loc["Agropecuária", "VL_FOB"] == 250
+        assert composition.loc["Indústria de Transformação", "VL_FOB"] == 300
+        price_history, _ = monthly_history(output, state, "FOB_POR_KG", False)
+        assert round(float(price_history.loc[0, "VALOR"]), 6) == round(750 / 140, 6)
+        states = section301_state_impact(
+            output,
+            state,
+            ROOT / "data" / "reference" / "section301_exemptions_sh6.csv",
+        ).set_index("UF")
+        assert states.loc["SP", "POSICAO_EUA"] == 2
+        assert states.loc["MG", "POSICAO_EUA"] == 1
+        assert states.loc["SP", "VALOR_POTENCIALMENTE_AFETADO"] == 100
+        assert states.loc["GO", "VALOR_POTENCIALMENTE_AFETADO"] == 0
     print("Teste do comex_web.duckdb concluído com sucesso.")
 
 

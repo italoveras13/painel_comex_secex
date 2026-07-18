@@ -259,6 +259,8 @@ def section301_exposure(
         exports = con.execute(
             f"""
             SELECT
+                SETOR,
+                CATEGORIA_USO,
                 CO_NCM,
                 coalesce(NO_NCM_POR, CO_NCM) AS NO_NCM_POR,
                 CO_SH6,
@@ -269,7 +271,7 @@ def section301_exposure(
             WHERE {where}
               AND CO_PAIS_ISOA3 = 'USA'
               AND CO_SH6 IS NOT NULL
-            GROUP BY CO_NCM, NO_NCM_POR, CO_SH6, NO_SH6_POR
+            GROUP BY SETOR, CATEGORIA_USO, CO_NCM, NO_NCM_POR, CO_SH6, NO_SH6_POR
             ORDER BY VL_FOB DESC NULLS LAST
             """,
             params,
@@ -369,7 +371,8 @@ def section301_sector_impact(
                         f.CO_PAIS_ISOA3,
                         f.PAIS,
                         f.CO_SH6,
-                        sum(f.VL_FOB) AS VALOR
+                        sum(f.VL_FOB) AS VALOR,
+                        sum(f.KG_LIQUIDO) AS KG_LIQUIDO
                     FROM filtrado f
                     LEFT JOIN dim_ncm n USING (CO_NCM)
                     GROUP BY 1, 2, 3, 4, 5, 6
@@ -396,8 +399,11 @@ def section301_sector_impact(
                     SELECT
                         {dimension_sql},
                         sum(b.VALOR) AS EXPORTACOES_EUA,
+                        sum(b.KG_LIQUIDO) / 1000.0 AS TONELADAS_EUA,
                         sum(CASE WHEN r.CO_SH6 IS NULL THEN b.VALOR ELSE 0 END)
-                            AS VALOR_POTENCIALMENTE_AFETADO
+                            AS VALOR_POTENCIALMENTE_AFETADO,
+                        sum(CASE WHEN r.CO_SH6 IS NULL THEN b.KG_LIQUIDO ELSE 0 END) / 1000.0
+                            AS TONELADAS_POTENCIALMENTE_AFETADAS
                     FROM base b
                     LEFT JOIN _section301_ref r USING (CO_SH6)
                     WHERE b.CO_PAIS_ISOA3 = 'USA'
@@ -424,9 +430,11 @@ def section301_sector_impact(
                     CASE WHEN pe.POSICAO_EUA = 1 THEN 'Sim' ELSE 'Não' END
                         AS EUA_MAIOR_CLIENTE,
                     e.EXPORTACOES_EUA,
+                    e.TONELADAS_EUA,
                     e.EXPORTACOES_EUA / nullif(m.EXPORTACOES_MUNDO, 0)
                         AS PARTICIPACAO_EUA,
                     e.VALOR_POTENCIALMENTE_AFETADO,
+                    e.TONELADAS_POTENCIALMENTE_AFETADAS,
                     e.VALOR_POTENCIALMENTE_AFETADO / nullif(e.EXPORTACOES_EUA, 0)
                         AS PARTICIPACAO_AFETADA_NOS_EUA,
                     e.VALOR_POTENCIALMENTE_AFETADO / nullif(m.EXPORTACOES_MUNDO, 0)
@@ -447,6 +455,130 @@ def section301_sector_impact(
     return frame
 
 
+def section301_state_impact(
+    database: Path,
+    state: FilterState,
+    reference_csv: Path,
+) -> pd.DataFrame:
+    """Mede valor, volume e dependência comercial por UF exportadora."""
+    if state.year is None:
+        raise ValueError("Selecione um ano.")
+    if not reference_csv.exists():
+        raise FileNotFoundError(f"Referência da Seção 301 não encontrada: {reference_csv}")
+
+    export_state = replace(state, flow="EXP")
+    where, params = _where(export_state)
+    reference = pd.read_csv(
+        reference_csv,
+        sep=";",
+        usecols=["CO_SH6"],
+        dtype={"CO_SH6": "string"},
+        keep_default_na=False,
+    ).drop_duplicates("CO_SH6")
+    reference["CO_SH6"] = reference["CO_SH6"].str.zfill(6)
+
+    with _connect(database) as con:
+        con.register("_section301_ref", reference)
+        try:
+            frame = con.execute(
+                f"""
+                WITH filtrado AS (
+                    SELECT *
+                    FROM vw_comex
+                    WHERE {where}
+                ),
+                base AS (
+                    SELECT
+                        coalesce(nullif(trim(SG_UF_NCM), ''), 'Não informado') AS UF,
+                        CO_PAIS_ISOA3,
+                        PAIS,
+                        CO_SH6,
+                        sum(VL_FOB) AS VL_FOB,
+                        sum(KG_LIQUIDO) AS KG_LIQUIDO
+                    FROM filtrado
+                    GROUP BY 1, 2, 3, 4
+                ),
+                destinos AS (
+                    SELECT UF, CO_PAIS_ISOA3, PAIS, sum(VL_FOB) AS VALOR
+                    FROM base
+                    GROUP BY UF, CO_PAIS_ISOA3, PAIS
+                ),
+                ranking AS (
+                    SELECT *, dense_rank() OVER (
+                        PARTITION BY UF ORDER BY VALOR DESC NULLS LAST
+                    ) AS POSICAO
+                    FROM destinos
+                ),
+                mundo AS (
+                    SELECT UF, sum(VALOR) AS EXPORTACOES_MUNDO
+                    FROM destinos
+                    GROUP BY UF
+                ),
+                eua AS (
+                    SELECT
+                        b.UF,
+                        sum(b.VL_FOB) AS EXPORTACOES_EUA,
+                        sum(b.KG_LIQUIDO) / 1000.0 AS TONELADAS_EUA,
+                        sum(CASE WHEN r.CO_SH6 IS NULL THEN b.VL_FOB ELSE 0 END)
+                            AS VALOR_POTENCIALMENTE_AFETADO,
+                        sum(CASE WHEN r.CO_SH6 IS NULL THEN b.KG_LIQUIDO ELSE 0 END) / 1000.0
+                            AS TONELADAS_POTENCIALMENTE_AFETADAS
+                    FROM base b
+                    LEFT JOIN _section301_ref r USING (CO_SH6)
+                    WHERE b.CO_PAIS_ISOA3 = 'USA'
+                    GROUP BY b.UF
+                ),
+                posicao_eua AS (
+                    SELECT UF, min(POSICAO) AS POSICAO_EUA
+                    FROM ranking
+                    WHERE CO_PAIS_ISOA3 = 'USA'
+                    GROUP BY UF
+                ),
+                principal AS (
+                    SELECT UF, string_agg(PAIS, ' / ' ORDER BY PAIS) AS PRINCIPAL_DESTINO
+                    FROM ranking
+                    WHERE POSICAO = 1
+                    GROUP BY UF
+                )
+                SELECT
+                    m.UF,
+                    p.PRINCIPAL_DESTINO,
+                    pe.POSICAO_EUA,
+                    CASE WHEN pe.POSICAO_EUA = 1 THEN 'Sim' ELSE 'Não' END
+                        AS EUA_MAIOR_CLIENTE,
+                    m.EXPORTACOES_MUNDO,
+                    e.EXPORTACOES_EUA,
+                    e.TONELADAS_EUA,
+                    e.EXPORTACOES_EUA / nullif(m.EXPORTACOES_MUNDO, 0) AS PARTICIPACAO_EUA,
+                    e.VALOR_POTENCIALMENTE_AFETADO,
+                    e.TONELADAS_POTENCIALMENTE_AFETADAS,
+                    e.VALOR_POTENCIALMENTE_AFETADO / nullif(e.EXPORTACOES_EUA, 0)
+                        AS PARTICIPACAO_AFETADA_NOS_EUA,
+                    e.VALOR_POTENCIALMENTE_AFETADO / nullif(m.EXPORTACOES_MUNDO, 0)
+                        AS EXPOSICAO_EXPORTACOES_UF
+                FROM mundo m
+                INNER JOIN eua e USING (UF)
+                LEFT JOIN posicao_eua pe USING (UF)
+                LEFT JOIN principal p USING (UF)
+                WHERE e.EXPORTACOES_EUA > 0
+                ORDER BY e.VALOR_POTENCIALMENTE_AFETADO DESC NULLS LAST
+                """,
+                params,
+            ).df()
+        finally:
+            con.unregister("_section301_ref")
+    if frame.empty:
+        return frame
+    frame["POSICAO_EUA"] = frame["POSICAO_EUA"].astype("Int64")
+    total_affected = frame["VALOR_POTENCIALMENTE_AFETADO"].sum(min_count=1)
+    frame["PARTICIPACAO_NO_AFETADO_BRASIL"] = (
+        frame["VALOR_POTENCIALMENTE_AFETADO"] / total_affected
+        if total_affected and total_affected > 0
+        else pd.NA
+    )
+    return frame
+
+
 def monthly_history(
     database: Path,
     state: FilterState,
@@ -456,7 +588,7 @@ def monthly_history(
 ) -> tuple[pd.DataFrame, list[int]]:
     if state.year is None:
         raise ValueError("Selecione um ano.")
-    if metric not in {"VL_FOB", "KG_LIQUIDO"}:
+    if metric not in {"VL_FOB", "KG_LIQUIDO", "FOB_POR_KG"}:
         raise ValueError("Métrica mensal inválida.")
     first_year = state.year - history_years
     where, params = _where(
@@ -464,12 +596,15 @@ def monthly_history(
         include_year=False,
         year_range=(first_year, state.year),
     )
-    numerator = f"sum({metric})"
-    value_expr = (
-        f"CASE WHEN max(DIAS_UTEIS) > 0 THEN {numerator} / max(DIAS_UTEIS) END"
-        if daily_average
-        else numerator
-    )
+    if metric == "FOB_POR_KG":
+        value_expr = "CASE WHEN sum(KG_LIQUIDO) > 0 THEN sum(VL_FOB) / sum(KG_LIQUIDO) END"
+    else:
+        numerator = f"sum({metric})"
+        value_expr = (
+            f"CASE WHEN max(DIAS_UTEIS) > 0 THEN {numerator} / max(DIAS_UTEIS) END"
+            if daily_average
+            else numerator
+        )
     with _connect(database) as con:
         frame = con.execute(
             f"""
@@ -538,6 +673,49 @@ def country_ranking(
         .head(top_n)
     )
     return result
+
+
+def country_composition(
+    database: Path,
+    state: FilterState,
+    country_code: str,
+    level: str,
+    limit: int = 100,
+) -> pd.DataFrame:
+    """Detalha o comércio com um país por setor, categoria de uso ou NCM."""
+    dimensions = {
+        "SETOR": ("SETOR", "SETOR"),
+        "CATEGORIA_USO": ("CATEGORIA_USO", "CATEGORIA_USO"),
+        "NCM": ("CO_NCM", "NO_NCM_POR"),
+    }
+    if level not in dimensions:
+        raise ValueError(f"Nível de composição do país inválido: {level}")
+    code, description = dimensions[level]
+    where, params = _where(state)
+    with _connect(database) as con:
+        frame = con.execute(
+            f"""
+            WITH agrupado AS (
+                SELECT
+                    coalesce({code}, 'Não classificado') AS CODIGO,
+                    coalesce({description}, {code}, 'Não classificado') AS DESCRICAO,
+                    sum(VL_FOB) AS VL_FOB,
+                    sum(KG_LIQUIDO) / 1000.0 AS TONELADAS,
+                    count(DISTINCT CO_NCM) AS NCMS
+                FROM vw_comex
+                WHERE {where} AND CO_PAIS = ?
+                GROUP BY 1, 2
+            )
+            SELECT
+                *,
+                VL_FOB / nullif(sum(VL_FOB) OVER (), 0) AS PARTICIPACAO
+            FROM agrupado
+            ORDER BY VL_FOB DESC NULLS LAST
+            LIMIT ?
+            """,
+            [*params, str(country_code), limit],
+        ).df()
+    return frame
 
 
 def quality_report(database: Path) -> pd.DataFrame:

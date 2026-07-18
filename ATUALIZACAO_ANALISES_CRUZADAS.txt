@@ -1,0 +1,39 @@
+ATUALIZAÇÃO — ANÁLISES CRUZADAS E CORREÇÕES VISUAIS
+
+ALTERAÇÕES DESTA VERSÃO
+
+1. VISÃO MENSAL
+- Valor FOB, peso líquido em toneladas e valor médio em US$/kg.
+- Indicadores do período, ano anterior, variação e mês de maior nível.
+- Subabas de evolução histórica, variação anual e tabela mensal.
+- Comparação contra média, mínimo e máximo dos anos anteriores.
+
+2. CLASSIFICAÇÃO
+- Subabas Visão geral, Principais NCM e Principais destinos/origens.
+- A classificação escolhida é aplicada ao detalhamento de produtos e países.
+
+3. PAÍSES
+- Nova subaba para selecionar um país e analisar setores, categorias de uso e
+  principais NCM exportados ou importados.
+
+4. SALDO COMERCIAL
+- Cartões responsivos para impedir o corte dos valores em telas menores.
+- Identificação visual de superávit, déficit ou saldo zerado.
+
+5. SEÇÃO 301
+- A tabela ISIC deixa de repetir o nome do setor em duas colunas.
+- Ranking de SH6 e distribuição do valor passaram a usar toda a largura.
+- O gráfico de distribuição agora usa barras, evitando rótulos sobrepostos.
+
+COMO APLICAR
+
+Feche o Streamlit com Ctrl+C, substitua os scripts e execute:
+
+  .\.venv\Scripts\python.exe -m streamlit cache clear
+  .\.venv\Scripts\python.exe -m streamlit run app.py
+
+Se a sua versão do comex_web.duckdb já possui SG_UF_NCM, não é necessário
+refazer o ETL nem gerar o banco web novamente. Caso a aba Estados exportadores
+informe que a UF não existe, execute uma única vez:
+
+  .\.venv\Scripts\python.exe build_web_database.py --force

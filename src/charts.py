@@ -16,21 +16,104 @@ def prepare_monthly_profile(
         history.loc[history["ANO"] == selected_year, ["MES", "VALOR"]]
         .rename(columns={"VALOR": "ATUAL"})
     )
+    previous = (
+        history.loc[history["ANO"] == selected_year - 1, ["MES", "VALOR"]]
+        .rename(columns={"VALOR": "ANTERIOR"})
+    )
     historical = history.loc[history["ANO"] < selected_year]
     if historical.empty:
-        band = pd.DataFrame(columns=["MES", "MIN_5A", "MAX_5A", "N_ANOS_BANDA"])
+        band = pd.DataFrame(
+            columns=["MES", "MIN_5A", "MAX_5A", "MEDIA_5A", "N_ANOS_BANDA"]
+        )
     else:
         band = (
             historical.groupby("MES", as_index=False)
             .agg(
                 MIN_5A=("VALOR", "min"),
                 MAX_5A=("VALOR", "max"),
+                MEDIA_5A=("VALOR", "mean"),
                 N_ANOS_BANDA=("ANO", "nunique"),
             )
         )
-    profile = grid.merge(current, on="MES", how="left").merge(band, on="MES", how="left")
+    profile = (
+        grid.merge(current, on="MES", how="left")
+        .merge(previous, on="MES", how="left")
+        .merge(band, on="MES", how="left")
+    )
+    previous_nonzero = profile["ANTERIOR"].where(profile["ANTERIOR"] != 0)
+    mean_nonzero = profile["MEDIA_5A"].where(profile["MEDIA_5A"] != 0)
+    profile["VAR_1A"] = profile["ATUAL"].sub(profile["ANTERIOR"]).div(previous_nonzero)
+    profile["DESVIO_MEDIA_5A"] = profile["ATUAL"].sub(profile["MEDIA_5A"]).div(mean_nonzero)
     profile["MES_LABEL"] = profile["MES"].map(MONTH_NAMES)
     return profile
+
+
+def monthly_variation_plotly(profile: pd.DataFrame, selected_year: int):
+    import plotly.graph_objects as go
+
+    data = profile.loc[profile["VAR_1A"].notna()].copy()
+    colors = data["VAR_1A"].map(lambda value: "#18794E" if value >= 0 else "#C43D3D")
+    fig = go.Figure(
+        go.Bar(
+            x=data["MES_LABEL"],
+            y=data["VAR_1A"],
+            marker={"color": colors},
+            customdata=data[["ATUAL", "ANTERIOR", "DESVIO_MEDIA_5A"]],
+            hovertemplate=(
+                "%{x}<br>Variação anual: %{y:.1%}"
+                "<br>Ano selecionado: %{customdata[0]:,.2f}"
+                "<br>Ano anterior: %{customdata[1]:,.2f}"
+                "<br>Contra média histórica: %{customdata[2]:.1%}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_hline(y=0, line_color="#6B756D", line_width=1.2)
+    fig.update_layout(
+        title=f"Variação mensal de {selected_year} contra {selected_year - 1}",
+        template="plotly_white",
+        height=430,
+        margin={"l": 20, "r": 20, "t": 60, "b": 45},
+        xaxis={"title": None},
+        yaxis={"title": "Variação", "tickformat": ".0%", "gridcolor": "#E8EEE9"},
+        showlegend=False,
+    )
+    return fig
+
+
+def value_ranking_plotly(
+    data: pd.DataFrame,
+    label_column: str,
+    value_column: str,
+    title: str,
+    top_n: int = 15,
+    color: str = "#18794E",
+):
+    """Ranking horizontal compacto para produtos e composições."""
+    import plotly.graph_objects as go
+
+    ranked = data.nlargest(top_n, value_column).sort_values(value_column)
+    fig = go.Figure(
+        go.Bar(
+            x=ranked[value_column],
+            y=ranked[label_column],
+            orientation="h",
+            marker={"color": color},
+            hovertemplate="%{y}<br>Valor FOB: US$ %{x:,.0f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        height=max(410, 31 * len(ranked) + 105),
+        margin={"l": 20, "r": 30, "t": 60, "b": 60},
+        xaxis={
+            "title": "Valor FOB (US$)", "tickformat": ",.3s",
+            "gridcolor": "#E8EEE9", "automargin": True,
+        },
+        yaxis={"title": None, "automargin": True},
+        showlegend=False,
+    )
+    return fig
 
 
 def monthly_plotly(
@@ -195,7 +278,8 @@ def balance_status_plotly(balance: pd.DataFrame):
             values=counts.values,
             hole=0.65,
             marker={"colors": ["#18794E", "#C43D3D", "#8A938C"]},
-            textinfo="label+value",
+            textinfo="percent",
+            textposition="inside",
             hovertemplate="%{label}: %{value} países (%{percent})<extra></extra>",
         )
     )
@@ -203,8 +287,9 @@ def balance_status_plotly(balance: pd.DataFrame):
         title="Situação por número de países",
         template="plotly_white",
         height=420,
-        margin={"l": 10, "r": 10, "t": 55, "b": 25},
-        showlegend=False,
+        margin={"l": 10, "r": 10, "t": 55, "b": 65},
+        showlegend=True,
+        legend={"orientation": "h", "y": -0.08, "x": 0.5, "xanchor": "center"},
         annotations=[
             {
                 "text": f"{int(counts.sum())}<br><span style='font-size:12px'>países</span>",
@@ -234,31 +319,29 @@ def section301_status_plotly(exposure: pd.DataFrame):
         order[3]: "Correspondência mista",
     }
     totals = exposure.groupby("SITUACAO_301")["VL_FOB"].sum().reindex(order, fill_value=0)
+    status_labels = [labels[value] for value in totals.index]
+    shares = totals / totals.sum() if totals.sum() else totals
     fig = go.Figure(
-        go.Pie(
-            labels=[labels[value] for value in totals.index],
-            values=totals.values,
-            hole=0.64,
-            marker={"colors": ["#C43D3D", "#18794E", "#D28B20", "#5B6FB5"]},
-            textinfo="label+percent",
-            hovertemplate="%{label}<br>US$ %{value:,.0f}<br>%{percent}<extra></extra>",
+        go.Bar(
+            x=totals.values,
+            y=status_labels,
+            orientation="h",
+            marker={"color": ["#C43D3D", "#18794E", "#D28B20", "#5B6FB5"]},
+            customdata=shares.values,
+            text=[f"{value:.1%}" for value in shares],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}<br>US$ %{x:,.0f}<br>%{customdata:.1%}<extra></extra>",
         )
     )
     fig.update_layout(
         title="Distribuição do valor exportado aos EUA",
         template="plotly_white",
-        height=440,
-        margin={"l": 10, "r": 10, "t": 60, "b": 25},
+        height=340,
+        margin={"l": 20, "r": 80, "t": 60, "b": 55},
         showlegend=False,
-        annotations=[
-            {
-                "text": "SH6<br><span style='font-size:11px'>triagem indicativa</span>",
-                "x": 0.5,
-                "y": 0.5,
-                "font": {"size": 18, "color": "#173A25"},
-                "showarrow": False,
-            }
-        ],
+        xaxis={"title": "Valor FOB (US$)", "tickformat": ",.3s", "gridcolor": "#E8EEE9"},
+        yaxis={"title": None, "automargin": True, "categoryorder": "array", "categoryarray": status_labels[::-1]},
     )
     return fig
 
@@ -298,6 +381,65 @@ def section301_products_plotly(exposure: pd.DataFrame, top_n: int = 15):
         margin={"l": 10, "r": 20, "t": 60, "b": 25},
         xaxis={"title": "Valor FOB (US$)", "tickformat": ",.3s", "gridcolor": "#E8EEE9"},
         yaxis={"title": None},
+        showlegend=False,
+    )
+    return fig
+
+
+def section301_impact_ranking_plotly(
+    data: pd.DataFrame,
+    label_column: str,
+    title: str,
+    top_n: int = 10,
+    color: str = "#B42318",
+):
+    """Ranking horizontal reutilizado nos recortes executivos da Seção 301."""
+    import plotly.graph_objects as go
+
+    columns = [label_column, "VALOR_POTENCIALMENTE_AFETADO"]
+    has_tonnes = "TONELADAS_POTENCIALMENTE_AFETADAS" in data.columns
+    has_share = "PARTICIPACAO_NO_AFETADO_BRASIL" in data.columns
+    if has_tonnes:
+        columns.append("TONELADAS_POTENCIALMENTE_AFETADAS")
+    if has_share:
+        columns.append("PARTICIPACAO_NO_AFETADO_BRASIL")
+    ranked = (
+        data[columns]
+        .nlargest(top_n, "VALOR_POTENCIALMENTE_AFETADO")
+        .sort_values("VALOR_POTENCIALMENTE_AFETADO")
+    )
+    custom_columns: list[str] = []
+    hover = "%{y}<br>Potencialmente afetado: US$ %{x:,.0f}"
+    if has_tonnes:
+        custom_columns.append("TONELADAS_POTENCIALMENTE_AFETADAS")
+        hover += "<br>Volume potencial: %{customdata[0]:,.1f} t"
+    if has_share:
+        share_index = len(custom_columns)
+        custom_columns.append("PARTICIPACAO_NO_AFETADO_BRASIL")
+        hover += f"<br>Participação no total: %{{customdata[{share_index}]:.2%}}"
+    customdata = ranked[custom_columns] if custom_columns else None
+    fig = go.Figure(
+        go.Bar(
+            x=ranked["VALOR_POTENCIALMENTE_AFETADO"],
+            y=ranked[label_column],
+            orientation="h",
+            marker={"color": color},
+            customdata=customdata,
+            hovertemplate=hover + "<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        height=max(400, 32 * len(ranked) + 110),
+        margin={"l": 20, "r": 35, "t": 60, "b": 65},
+        xaxis={
+            "title": "Valor potencialmente afetado (US$)",
+            "tickformat": ",.3s",
+            "gridcolor": "#E8EEE9",
+            "automargin": True,
+        },
+        yaxis={"title": None, "automargin": True},
         showlegend=False,
     )
     return fig

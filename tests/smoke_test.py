@@ -122,6 +122,9 @@ def main() -> None:
     assert profile["ATUAL"].tolist() == [110, 60]
     assert profile["MIN_5A"].tolist() == [80, 50]
     assert profile["MAX_5A"].tolist() == [100, 70]
+    assert profile["ANTERIOR"].tolist() == [100, 70]
+    assert profile["VAR_1A"].round(4).tolist() == [0.1, -0.1429]
+    assert profile["MEDIA_5A"].tolist() == [90, 60]
 
     reference = pd.read_csv(
         ROOT / "data" / "reference" / "section301_exemptions_sh6.csv",

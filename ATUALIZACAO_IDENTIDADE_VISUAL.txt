@@ -1,0 +1,25 @@
+ATUALIZAÇÃO — IDENTIDADE VISUAL
+
+O nome exibido no navegador e no cabeçalho agora é:
+
+  Painel do Comércio Exterior
+
+O desenho foi simplificado para se aproximar de um sistema institucional de
+consulta pública:
+
+- cabeçalho branco com marcação lateral verde;
+- fundo neutro e superfícies planas;
+- menos sombras, gradientes, círculos decorativos e cantos arredondados;
+- abas simples, com indicação discreta do item selecionado;
+- textos mais curtos e linguagem descritiva;
+- títulos sem uso excessivo de caixa alta;
+- contexto do recorte apresentado em uma única linha.
+
+COMO APLICAR
+
+Feche o Streamlit com Ctrl+C, substitua os arquivos e execute:
+
+  .\.venv\Scripts\python.exe -m streamlit cache clear
+  .\.venv\Scripts\python.exe -m streamlit run app.py
+
+Não é necessário refazer o ETL ou o comex_web.duckdb para esta atualização.

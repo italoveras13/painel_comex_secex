@@ -32,19 +32,19 @@ def main() -> None:
             """
             CREATE TABLE vw_comex AS SELECT * FROM (VALUES
                 ('EXP', 2026, 1, '01010100', '010101', 'Agropecuária',
-                 'USA', 'Estados Unidos', 60.0),
+                 'USA', 'Estados Unidos', 60.0, 600.0),
                 ('EXP', 2026, 1, '01010100', '010101', 'Agropecuária',
-                 'CHN', 'China', 20.0),
+                 'CHN', 'China', 20.0, 200.0),
                 ('EXP', 2026, 1, '03010100', '030101', 'Indústria de Transformação',
-                 'USA', 'Estados Unidos', 100.0),
+                 'USA', 'Estados Unidos', 100.0, 1000.0),
                 ('EXP', 2026, 1, '02011000', '020110', 'Indústria de Transformação',
-                 'USA', 'Estados Unidos', 50.0),
+                 'USA', 'Estados Unidos', 50.0, 500.0),
                 ('EXP', 2026, 1, '03010100', '030101', 'Indústria de Transformação',
-                 'CHN', 'China', 200.0),
+                 'CHN', 'China', 200.0, 2000.0),
                 ('EXP', 2026, 1, '03010100', '030101', 'Indústria de Transformação',
-                 'ARG', 'Argentina', 50.0)
+                 'ARG', 'Argentina', 50.0, 500.0)
             ) t(FLUXO, CO_ANO, CO_MES, CO_NCM, CO_SH6, SETOR,
-                CO_PAIS_ISOA3, PAIS, VL_FOB)
+                CO_PAIS_ISOA3, PAIS, VL_FOB, KG_LIQUIDO)
             """
         )
         con.close()
