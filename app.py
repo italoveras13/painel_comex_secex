@@ -18,6 +18,7 @@ from src.charts import (
     section301_products_plotly,
     section301_status_plotly,
     trade_balance_plotly,
+    us_effective_tariff_plotly,
     value_ranking_plotly,
 )
 from src.queries import (
@@ -51,6 +52,7 @@ DATABASE = Path(
     )
 ).expanduser().resolve()
 SECTION301_REFERENCE = PROJECT_DIR / "data" / "reference" / "section301_exemptions_sh6.csv"
+US_TARIFF_REFERENCE = PROJECT_DIR / "data" / "reference" / "us_effective_tariff_brazil.csv"
 UF_NAMES = {
     "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas",
     "BA": "Bahia", "CE": "Ceará", "DF": "Distrito Federal", "ES": "Espírito Santo",
@@ -301,6 +303,32 @@ def cached_section301_states(
     reference_version: tuple[int, int],
 ) -> pd.DataFrame:
     return section301_state_impact(Path(database), state, Path(reference_csv))
+
+
+@st.cache_data(show_spinner=False)
+def cached_us_effective_tariff(
+    reference_csv: str,
+    reference_version: tuple[int, int],
+) -> pd.DataFrame:
+    data = pd.read_csv(reference_csv, sep=";")
+    required = {
+        "DATA", "IMPORTACOES_CONSUMO_USD", "DIREITOS_ADUANEIROS_USD",
+        "BASE_TRIBUTAVEL_USD", "TARIFA_EFETIVA_PCT", "TARIFA_BASE_TRIBUTAVEL_PCT",
+    }
+    missing = required.difference(data.columns)
+    if missing:
+        raise ValueError(f"Colunas ausentes na série tarifária: {', '.join(sorted(missing))}")
+    data["DATA"] = pd.to_datetime(data["DATA"], errors="coerce")
+    numeric_columns = required.difference({"DATA"})
+    for column in numeric_columns:
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+    data = data.dropna(subset=list(required)).sort_values("DATA").drop_duplicates("DATA")
+    calculated = data["DIREITOS_ADUANEIROS_USD"].div(
+        data["IMPORTACOES_CONSUMO_USD"].replace(0, pd.NA)
+    ).mul(100)
+    if calculated.sub(data["TARIFA_EFETIVA_PCT"]).abs().max() > 0.001:
+        raise ValueError("A tarifa efetiva não confere com direitos ÷ importações para consumo.")
+    return data.reset_index(drop=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -1243,9 +1271,10 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
         unsafe_allow_html=True,
     )
 
-    tab_summary, tab_sectors, tab_states, tab_categories, tab_products, tab_method = st.tabs(
+    tab_summary, tab_tariff, tab_sectors, tab_states, tab_categories, tab_products, tab_method = st.tabs(
         [
             "Visão geral",
+            "Tarifa efetiva",
             "Setores e SH6",
             "Estados exportadores",
             "Categoria de uso",
@@ -1317,6 +1346,108 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
                 use_container_width=True,
                 config={"displaylogo": False},
             )
+
+    with tab_tariff:
+        if not US_TARIFF_REFERENCE.exists():
+            st.warning(
+                "A série tarifária não foi encontrada em "
+                "data/reference/us_effective_tariff_brazil.csv."
+            )
+        else:
+            tariff_version = database_token(US_TARIFF_REFERENCE)
+            tariff = cached_us_effective_tariff(str(US_TARIFF_REFERENCE), tariff_version)
+            if tariff.empty:
+                st.info("A série tarifária está vazia.")
+            else:
+                latest = tariff.iloc[-1]
+                previous = tariff.iloc[-2] if len(tariff) > 1 else None
+                prior_year_date = latest["DATA"] - pd.DateOffset(years=1)
+                prior_year_rows = tariff.loc[tariff["DATA"] == prior_year_date]
+                prior_year = prior_year_rows.iloc[-1] if not prior_year_rows.empty else None
+                peak = tariff.loc[tariff["TARIFA_EFETIVA_PCT"].idxmax()]
+                latest_label = f"{MONTH_NAMES[int(latest['DATA'].month)]}/{int(latest['DATA'].year)}"
+                peak_label = f"{MONTH_NAMES[int(peak['DATA'].month)]}/{int(peak['DATA'].year)}"
+                monthly_change = (
+                    latest["TARIFA_EFETIVA_PCT"] - previous["TARIFA_EFETIVA_PCT"]
+                    if previous is not None else pd.NA
+                )
+                annual_change = (
+                    latest["TARIFA_EFETIVA_PCT"] - prior_year["TARIFA_EFETIVA_PCT"]
+                    if prior_year is not None else pd.NA
+                )
+
+                st.caption(
+                    "Direitos aduaneiros cobrados pelos Estados Unidos como percentual do valor "
+                    f"das importações para consumo. Último mês disponível: {latest_label}."
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Tarifa efetiva", f"{latest['TARIFA_EFETIVA_PCT']:.2f}%".replace(".", ","))
+                c2.metric(
+                    "Variação mensal",
+                    "—" if pd.isna(monthly_change) else f"{monthly_change:+.2f} p.p.".replace(".", ","),
+                )
+                c3.metric(
+                    "Variação em 12 meses",
+                    "—" if pd.isna(annual_change) else f"{annual_change:+.2f} p.p.".replace(".", ","),
+                )
+                c4.metric(
+                    "Pico da série",
+                    f"{peak['TARIFA_EFETIVA_PCT']:.2f}%".replace(".", ","),
+                    help=f"Maior valor mensal, observado em {peak_label}.",
+                )
+
+                with st.container(border=True):
+                    st.plotly_chart(
+                        us_effective_tariff_plotly(tariff),
+                        use_container_width=True,
+                        config={"displaylogo": False, "scrollZoom": False},
+                    )
+
+                with st.expander("Consultar os dados mensais e a taxa sobre a base tributável"):
+                    table = tariff.copy()
+                    table["MES"] = table["DATA"].map(
+                        lambda value: f"{MONTH_NAMES[int(value.month)]}/{int(value.year)}"
+                    )
+                    st.dataframe(
+                        table[[
+                            "MES", "IMPORTACOES_CONSUMO_USD", "DIREITOS_ADUANEIROS_USD",
+                            "BASE_TRIBUTAVEL_USD", "TARIFA_EFETIVA_PCT",
+                            "TARIFA_BASE_TRIBUTAVEL_PCT",
+                        ]],
+                        use_container_width=True,
+                        hide_index=True,
+                        height=450,
+                        column_config={
+                            "MES": "Mês",
+                            "IMPORTACOES_CONSUMO_USD": st.column_config.NumberColumn(
+                                "Importações para consumo (US$)", format="localized"
+                            ),
+                            "DIREITOS_ADUANEIROS_USD": st.column_config.NumberColumn(
+                                "Direitos aduaneiros (US$)", format="localized"
+                            ),
+                            "BASE_TRIBUTAVEL_USD": st.column_config.NumberColumn(
+                                "Base tributável (US$)", format="localized"
+                            ),
+                            "TARIFA_EFETIVA_PCT": st.column_config.NumberColumn(
+                                "Tarifa efetiva", format="%.2f%%"
+                            ),
+                            "TARIFA_BASE_TRIBUTAVEL_PCT": st.column_config.NumberColumn(
+                                "Taxa sobre a base tributável", format="%.2f%%"
+                            ),
+                        },
+                    )
+                    st.download_button(
+                        "Baixar série tarifária em CSV",
+                        tariff.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig"),
+                        file_name="tarifa_efetiva_eua_brasil.csv",
+                        mime="text/csv",
+                    )
+
+                st.caption(
+                    "Fonte: U.S. Census Bureau, International Trade API. "
+                    "Tarifa efetiva = direitos aduaneiros calculados ÷ importações para consumo × 100. "
+                    "A taxa sobre a base tributável usa somente o valor das mercadorias sujeitas a direitos."
+                )
 
     with tab_sectors:
         level_col, order_col = st.columns([1, 1.4])

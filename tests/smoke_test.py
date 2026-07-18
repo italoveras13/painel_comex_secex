@@ -137,6 +137,18 @@ def main() -> None:
     assert reference["CO_SH6"].str.len().eq(6).all()
     assert not reference["CO_SH6"].str.startswith(("98", "99")).any()
 
+    tariff = pd.read_csv(ROOT / "data" / "reference" / "us_effective_tariff_brazil.csv", sep=";")
+    tariff["DATA"] = pd.to_datetime(tariff["DATA"])
+    assert len(tariff) == 89
+    assert tariff["DATA"].is_monotonic_increasing and tariff["DATA"].is_unique
+    assert tariff["DATA"].iloc[0] == pd.Timestamp("2019-01-01")
+    assert tariff["DATA"].iloc[-1] == pd.Timestamp("2026-05-01")
+    calculated_tariff = (
+        tariff["DIREITOS_ADUANEIROS_USD"] / tariff["IMPORTACOES_CONSUMO_USD"] * 100
+    )
+    assert calculated_tariff.sub(tariff["TARIFA_EFETIVA_PCT"]).abs().max() < 1e-8
+    assert round(float(tariff["TARIFA_EFETIVA_PCT"].iloc[-1]), 6) == 10.639953
+
     exports = pd.DataFrame(
         {
             "CO_NCM": ["02011000", "28041000", "01010100"],

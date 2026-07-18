@@ -14,7 +14,8 @@ As principais telas analíticas incluem:
 - países com abertura por setor, categoria de uso e NCM comercializado;
 - saldo bilateral com cartões responsivos, ranking de superávits e déficits;
 - painel temático da Seção 301 com gráficos dimensionados para leitura em
-  notebooks e monitores menores.
+  notebooks e monitores menores, incluindo a evolução mensal da tarifa efetiva
+  cobrada pelos EUA sobre importações originárias do Brasil.
 
 ## Arquitetura
 
@@ -76,10 +77,13 @@ dígitos, mas seus desdobramentos nacionais não são equivalentes. Exceções
 baseadas em regimes dos capítulos 98/99 e condições de entrada não podem ser
 integralmente identificadas por SH6.
 
-A aba temática foi organizada em seis subabas:
+A aba temática foi organizada em sete subabas:
 
 - `Resumo executivo`: valor e tonelagem potencialmente afetados, exposição,
   prioridades e ranking dos SH6;
+- `Tarifa efetiva`: série mensal de janeiro de 2019 a maio de 2026, calculada
+  como direitos aduaneiros divididos pelo valor das importações para consumo,
+  com indicadores, dados detalhados e download em CSV;
 - `Setores e SH6`: análise por setor macro ou seção ISIC e detalhamento dos
   SH6 mais expostos dentro de cada setor;
 - `Estados exportadores`: UFs com maior valor potencialmente afetado,
@@ -95,6 +99,10 @@ valor sem correspondência de isenção e a exposição do setor (`valor
 potencialmente afetado / exportações mundiais do setor`). Assim, valor absoluto
 e dependência comercial podem ser avaliados separadamente. Pesos físicos são
 apresentados em toneladas; `US$/kg` é mantido apenas como preço unitário.
+
+A série tarifária vem do U.S. Census Bureau, International Trade API, e fica em
+`data/reference/us_effective_tariff_brazil.csv`. Ela é independente do banco
+DuckDB e, por isso, não exige refazer o ETL nem o `comex_web.duckdb`.
 
 Para auditar ou refazer a extração com o PDF original:
 

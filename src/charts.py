@@ -443,3 +443,93 @@ def section301_impact_ranking_plotly(
         showlegend=False,
     )
     return fig
+
+
+def us_effective_tariff_plotly(data: pd.DataFrame):
+    """Série mensal da tarifa efetiva cobrada pelos EUA sobre produtos brasileiros."""
+    import plotly.graph_objects as go
+
+    series = data.sort_values("DATA").copy()
+    tick_data = series.iloc[::6].copy()
+    if not tick_data.empty and tick_data.iloc[-1]["DATA"] != series.iloc[-1]["DATA"]:
+        tick_data = pd.concat([tick_data, series.tail(1)], ignore_index=True)
+    tick_text = tick_data["DATA"].map(
+        lambda value: f"{MONTH_NAMES[int(value.month)]}/{int(value.year)}"
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=series["DATA"],
+            y=series["TARIFA_EFETIVA_PCT"],
+            mode="lines",
+            line={"color": "#1D2821", "width": 2.2},
+            customdata=series[[
+                "IMPORTACOES_CONSUMO_USD",
+                "DIREITOS_ADUANEIROS_USD",
+                "TARIFA_BASE_TRIBUTAVEL_PCT",
+            ]],
+            name="Tarifa efetiva total",
+            hovertemplate=(
+                "%{x|%m/%Y}<br><b>Tarifa efetiva: %{y:.2f}%</b>"
+                "<br>Importações para consumo: US$ %{customdata[0]:,.0f}"
+                "<br>Direitos aduaneiros: US$ %{customdata[1]:,.0f}"
+                "<br>Taxa sobre a base tributável: %{customdata[2]:.2f}%"
+                "<extra></extra>"
+            ),
+        )
+    )
+    latest = series.iloc[-1]
+    fig.add_trace(
+        go.Scatter(
+            x=[latest["DATA"]],
+            y=[latest["TARIFA_EFETIVA_PCT"]],
+            mode="markers",
+            marker={"size": 9, "color": "#1F633F", "line": {"color": "#FFFFFF", "width": 2}},
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+    fig.add_annotation(
+        x=latest["DATA"],
+        y=latest["TARIFA_EFETIVA_PCT"],
+        text=f"{latest['TARIFA_EFETIVA_PCT']:.1f}%",
+        showarrow=True,
+        arrowhead=0,
+        arrowcolor="#617068",
+        ax=-34,
+        ay=-34,
+        bgcolor="#FFFFFF",
+        bordercolor="#C9D2CC",
+        borderpad=5,
+        font={"color": "#17472F", "size": 12},
+    )
+    fig.update_layout(
+        title={
+            "text": "Tarifa efetiva dos EUA sobre importações originárias do Brasil",
+            "font": {"size": 20, "color": "#1D2821"},
+            "x": 0,
+        },
+        template="plotly_white",
+        height=510,
+        margin={"l": 25, "r": 45, "t": 75, "b": 70},
+        hovermode="x unified",
+        showlegend=False,
+        xaxis={
+            "title": None,
+            "tickmode": "array",
+            "tickvals": tick_data["DATA"],
+            "ticktext": tick_text,
+            "tickangle": -42,
+            "showgrid": False,
+            "linecolor": "#AEB9B1",
+        },
+        yaxis={
+            "title": "Tarifa efetiva (%)",
+            "ticksuffix": "%",
+            "rangemode": "tozero",
+            "gridcolor": "#E5EAE6",
+            "zeroline": False,
+        },
+    )
+    return fig
