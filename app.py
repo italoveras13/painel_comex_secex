@@ -1841,7 +1841,7 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
                 use_container_width=True, hide_index=True, height=590,
                 column_config={
                     "POSICAO_IMPACTO": st.column_config.NumberColumn("Posição no impacto", format="%d"),
-                    "FAIXA_IMPACTO": st.column_config.TextColumn("Leitura indicativa", width="medium"),
+                    "FAIXA_IMPACTO": st.column_config.TextColumn("Nível de exposição potencial", width="medium"),
                     "UF_LABEL": st.column_config.TextColumn("UF exportadora", width="medium"),
                     "PRINCIPAL_DESTINO": st.column_config.TextColumn("Maior cliente", width="medium"),
                     "POSICAO_EUA": st.column_config.NumberColumn("Posição dos EUA", format="%d"),
