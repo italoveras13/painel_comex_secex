@@ -16,6 +16,8 @@ from src.charts import (
     prepare_monthly_profile,
     section301_impact_ranking_plotly,
     section301_products_plotly,
+    section301_state_dependency_plotly,
+    section301_state_trade_plotly,
     section301_status_plotly,
     trade_balance_plotly,
     us_effective_tariff_plotly,
@@ -1557,27 +1559,112 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
             states["UF_LABEL"] = states["UF"].map(
                 lambda code: f"{UF_NAMES.get(code, code)} ({code})" if code in UF_NAMES else code
             )
+            states["POSICAO_IMPACTO"] = (
+                states["VALOR_POTENCIALMENTE_AFETADO"]
+                .rank(method="min", ascending=False)
+                .astype("Int64")
+            )
+            states["FAIXA_IMPACTO"] = states.apply(
+                lambda row: (
+                    "Sem exposição identificada"
+                    if row["VALOR_POTENCIALMENTE_AFETADO"] <= 0
+                    else "Maior exposição potencial"
+                    if row["POSICAO_IMPACTO"] <= 5
+                    else "Exposição relevante"
+                    if row["POSICAO_IMPACTO"] <= 10
+                    else "Menor exposição relativa"
+                ),
+                axis=1,
+            )
+            identified_states = states.loc[states["UF"] != "Não informado"].copy()
+            national_exports = cached_summary(
+                str(DATABASE), replace(state, flow="EXP"), db_version
+            )["VL_FOB"]
+            exports_to_us = states["EXPORTACOES_EUA"].sum()
+            affected_states_value = states["VALOR_POTENCIALMENTE_AFETADO"].sum()
+            us_share = exports_to_us / national_exports if national_exports else pd.NA
+
+            st.caption(
+                "A comparação usa o valor FOB exportado no ano, meses e produtos selecionados. "
+                "O resultado representa exposição potencial, não uma perda já observada após a tarifa."
+            )
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Exportações brasileiras no recorte", format_compact(national_exports, "US$ "))
+            c2.metric("Exportações aos EUA", format_compact(exports_to_us, "US$ "))
+            c3.metric(
+                "Participação dos EUA",
+                "—" if pd.isna(us_share) else f"{us_share:.1%}".replace(".", ","),
+            )
+            c4.metric(
+                "Valor potencialmente afetado",
+                format_compact(affected_states_value, "US$ "),
+            )
+
+            top_states = (
+                identified_states.loc[identified_states["VALOR_POTENCIALMENTE_AFETADO"] > 0]
+                .nlargest(3, "VALOR_POTENCIALMENTE_AFETADO")
+            )
+            st.markdown("#### UFs com maior exposição potencial")
+            if top_states.empty:
+                st.info("Nenhuma UF apresentou valor potencialmente afetado no recorte.")
+            else:
+                highlights = st.columns(len(top_states))
+                for column, (_, row) in zip(highlights, top_states.iterrows(), strict=False):
+                    with column.container(border=True):
+                        st.caption(f"{int(row['POSICAO_IMPACTO'])}ª posição no valor exposto")
+                        st.markdown(f"**{row['UF_LABEL']}**")
+                        st.write(format_compact(row["VALOR_POTENCIALMENTE_AFETADO"], "US$ "))
+                        st.caption(
+                            f"EUA: {row['PARTICIPACAO_EUA']:.1%} das exportações da UF · "
+                            f"parcela potencial: {row['PARTICIPACAO_AFETADA_NOS_EUA']:.1%} "
+                            "das vendas aos EUA."
+                        )
+
+            values_tab, dependency_tab = st.tabs(
+                ["Comparação dos valores", "Dependência e alcance potencial"]
+            )
+            with values_tab:
+                st.plotly_chart(
+                    section301_state_trade_plotly(identified_states, top_n=15),
+                    use_container_width=True,
+                    config={"displaylogo": False},
+                )
+                st.caption(
+                    "As barras são sobrepostas: o valor vermelho é parte das exportações aos EUA, "
+                    "e as exportações aos EUA são parte das exportações totais da UF."
+                )
+            with dependency_tab:
+                st.plotly_chart(
+                    section301_state_dependency_plotly(identified_states),
+                    use_container_width=True,
+                    config={"displaylogo": False},
+                )
+                st.caption(
+                    "O tamanho da bolha representa o valor potencialmente afetado. Em vermelho, "
+                    "UFs nas quais os Estados Unidos são o maior destino das exportações."
+                )
+
+            st.markdown("#### Tabela comparativa por unidade da Federação")
             state_order = st.selectbox(
                 "Ordenar UFs por",
-                ["Valor potencialmente afetado", "Participação dos EUA", "Exposição da UF"],
+                [
+                    "Valor potencialmente afetado", "Exportações totais", "Exportações aos EUA",
+                    "Participação dos EUA", "Exposição da UF",
+                ],
                 key="section301_state_order",
             )
             state_sort = {
                 "Valor potencialmente afetado": "VALOR_POTENCIALMENTE_AFETADO",
+                "Exportações totais": "EXPORTACOES_MUNDO",
+                "Exportações aos EUA": "EXPORTACOES_EUA",
                 "Participação dos EUA": "PARTICIPACAO_EUA",
                 "Exposição da UF": "EXPOSICAO_EXPORTACOES_UF",
             }[state_order]
             states = states.sort_values(state_sort, ascending=False, na_position="last")
-            st.plotly_chart(
-                section301_impact_ranking_plotly(
-                    states, "UF_LABEL", "Estados com maior valor potencialmente afetado", top_n=15,
-                    color="#9C3D2E",
-                ),
-                use_container_width=True, config={"displaylogo": False},
-            )
             st.dataframe(
                 states[[
-                    "UF_LABEL", "PRINCIPAL_DESTINO", "POSICAO_EUA", "EUA_MAIOR_CLIENTE",
+                    "POSICAO_IMPACTO", "FAIXA_IMPACTO", "UF_LABEL", "PRINCIPAL_DESTINO",
+                    "POSICAO_EUA", "EUA_MAIOR_CLIENTE",
                     "EXPORTACOES_MUNDO", "EXPORTACOES_EUA", "TONELADAS_EUA",
                     "PARTICIPACAO_EUA", "VALOR_POTENCIALMENTE_AFETADO",
                     "TONELADAS_POTENCIALMENTE_AFETADAS", "PARTICIPACAO_AFETADA_NOS_EUA",
@@ -1585,6 +1672,8 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
                 ]],
                 use_container_width=True, hide_index=True, height=590,
                 column_config={
+                    "POSICAO_IMPACTO": st.column_config.NumberColumn("Posição no impacto", format="%d"),
+                    "FAIXA_IMPACTO": st.column_config.TextColumn("Leitura indicativa", width="medium"),
                     "UF_LABEL": st.column_config.TextColumn("UF exportadora", width="medium"),
                     "PRINCIPAL_DESTINO": st.column_config.TextColumn("Maior cliente", width="medium"),
                     "POSICAO_EUA": st.column_config.NumberColumn("Posição dos EUA", format="%d"),

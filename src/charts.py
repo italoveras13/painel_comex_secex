@@ -445,6 +445,141 @@ def section301_impact_ranking_plotly(
     return fig
 
 
+def section301_state_trade_plotly(data: pd.DataFrame, top_n: int = 15):
+    """Compara exportações totais, vendas aos EUA e parcela potencialmente afetada por UF."""
+    import plotly.graph_objects as go
+
+    ranked = (
+        data.nlargest(top_n, "VALOR_POTENCIALMENTE_AFETADO")
+        .sort_values("VALOR_POTENCIALMENTE_AFETADO")
+        .copy()
+    )
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=ranked["EXPORTACOES_MUNDO"],
+            y=ranked["UF_LABEL"],
+            orientation="h",
+            name="Exportações totais",
+            marker={"color": "#DCE3DE"},
+            width=0.76,
+            hovertemplate="%{y}<br>Exportações totais: US$ %{x:,.0f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=ranked["EXPORTACOES_EUA"],
+            y=ranked["UF_LABEL"],
+            orientation="h",
+            name="Exportações aos EUA",
+            marker={"color": "#35658D"},
+            width=0.50,
+            customdata=ranked[["PARTICIPACAO_EUA"]],
+            hovertemplate=(
+                "%{y}<br>Exportações aos EUA: US$ %{x:,.0f}"
+                "<br>Participação dos EUA: %{customdata[0]:.1%}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=ranked["VALOR_POTENCIALMENTE_AFETADO"],
+            y=ranked["UF_LABEL"],
+            orientation="h",
+            name="Potencialmente afetado",
+            marker={"color": "#B42318"},
+            width=0.25,
+            customdata=ranked[["PARTICIPACAO_AFETADA_NOS_EUA", "EXPOSICAO_EXPORTACOES_UF"]],
+            hovertemplate=(
+                "%{y}<br>Potencialmente afetado: US$ %{x:,.0f}"
+                "<br>Das vendas aos EUA: %{customdata[0]:.1%}"
+                "<br>Das exportações totais da UF: %{customdata[1]:.1%}<extra></extra>"
+            ),
+        )
+    )
+    fig.update_layout(
+        title="Exportações totais, vendas aos EUA e valor potencialmente afetado",
+        template="plotly_white",
+        barmode="overlay",
+        height=max(470, 34 * len(ranked) + 125),
+        margin={"l": 20, "r": 30, "t": 70, "b": 75},
+        xaxis={
+            "title": "Valor FOB (US$)",
+            "tickformat": ",.3s",
+            "gridcolor": "#E8EEE9",
+            "automargin": True,
+        },
+        yaxis={"title": None, "automargin": True},
+        legend={"orientation": "h", "y": -0.13, "x": 0, "xanchor": "left"},
+    )
+    return fig
+
+
+def section301_state_dependency_plotly(data: pd.DataFrame):
+    """Relaciona dependência dos EUA, alcance potencial e valor exposto por UF."""
+    import plotly.graph_objects as go
+
+    work = data.loc[data["VALOR_POTENCIALMENTE_AFETADO"] > 0].copy()
+    if work.empty:
+        return go.Figure()
+    max_value = float(work["VALOR_POTENCIALMENTE_AFETADO"].max())
+    size_ref = 2.0 * max_value / (52.0**2) if max_value > 0 else 1.0
+    colors = work["EUA_MAIOR_CLIENTE"].map({"Sim": "#B42318", "Não": "#35658D"})
+    fig = go.Figure(
+        go.Scatter(
+            x=work["PARTICIPACAO_EUA"],
+            y=work["PARTICIPACAO_AFETADA_NOS_EUA"],
+            mode="markers+text",
+            text=work["UF"],
+            textposition="top center",
+            marker={
+                "size": work["VALOR_POTENCIALMENTE_AFETADO"],
+                "sizemode": "area",
+                "sizeref": size_ref,
+                "sizemin": 8,
+                "color": colors,
+                "opacity": 0.78,
+                "line": {"color": "#FFFFFF", "width": 1.2},
+            },
+            customdata=work[[
+                "UF_LABEL", "EXPORTACOES_MUNDO", "EXPORTACOES_EUA",
+                "VALOR_POTENCIALMENTE_AFETADO", "EXPOSICAO_EXPORTACOES_UF",
+                "EUA_MAIOR_CLIENTE",
+            ]],
+            hovertemplate=(
+                "<b>%{customdata[0]}</b>"
+                "<br>Participação dos EUA: %{x:.1%}"
+                "<br>Parcela potencial das vendas aos EUA: %{y:.1%}"
+                "<br>Exportações totais: US$ %{customdata[1]:,.0f}"
+                "<br>Exportações aos EUA: US$ %{customdata[2]:,.0f}"
+                "<br>Valor potencial: US$ %{customdata[3]:,.0f}"
+                "<br>Exposição nas exportações da UF: %{customdata[4]:.1%}"
+                "<br>EUA é o maior cliente: %{customdata[5]}<extra></extra>"
+            ),
+        )
+    )
+    fig.update_layout(
+        title="Dependência do mercado americano e alcance potencial das tarifas",
+        template="plotly_white",
+        height=560,
+        margin={"l": 30, "r": 35, "t": 70, "b": 70},
+        showlegend=False,
+        xaxis={
+            "title": "Participação dos EUA nas exportações da UF",
+            "tickformat": ".0%",
+            "rangemode": "tozero",
+            "gridcolor": "#E8EEE9",
+        },
+        yaxis={
+            "title": "Parcela potencialmente afetada das vendas aos EUA",
+            "tickformat": ".0%",
+            "rangemode": "tozero",
+            "gridcolor": "#E8EEE9",
+        },
+    )
+    return fig
+
+
 def us_effective_tariff_plotly(data: pd.DataFrame):
     """Série mensal da tarifa efetiva cobrada pelos EUA sobre produtos brasileiros."""
     import plotly.graph_objects as go

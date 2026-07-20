@@ -86,8 +86,9 @@ A aba temática foi organizada em sete subabas:
   com indicadores, dados detalhados e download em CSV;
 - `Setores e SH6`: análise por setor macro ou seção ISIC e detalhamento dos
   SH6 mais expostos dentro de cada setor;
-- `Estados exportadores`: UFs com maior valor potencialmente afetado,
-  dependência dos EUA e participação no impacto nacional;
+- `Estados exportadores`: exportações totais de cada UF, vendas e participação
+  dos EUA, valor potencialmente afetado, ranking de exposição e comparação
+  entre dependência do mercado americano e alcance potencial das tarifas;
 - `Categoria de uso`: tabelas por CGCE — bens de capital, intermediários, de
   consumo e combustíveis e lubrificantes — com abertura até o NCM;
 - `Produtos NCM`: triagem detalhada e exportação em CSV;

@@ -116,6 +116,11 @@ def main() -> None:
         assert states.loc["MG", "POSICAO_EUA"] == 1
         assert states.loc["SP", "VALOR_POTENCIALMENTE_AFETADO"] == 100
         assert states.loc["GO", "VALOR_POTENCIALMENTE_AFETADO"] == 0
+        assert states.loc["SP", "EXPORTACOES_MUNDO"] == 300
+        assert states.loc["SP", "EXPORTACOES_EUA"] == 100
+        assert abs(states.loc["SP", "PARTICIPACAO_EUA"] - (1 / 3)) < 1e-9
+        assert abs(states.loc["SP", "EXPOSICAO_EXPORTACOES_UF"] - (1 / 3)) < 1e-9
+        assert abs(states.loc["MG", "PARTICIPACAO_NO_AFETADO_BRASIL"] - 0.6) < 1e-9
     print("Teste do comex_web.duckdb concluído com sucesso.")
 
 
