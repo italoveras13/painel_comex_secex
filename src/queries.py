@@ -242,43 +242,10 @@ def trade_balance_by_country(
     return frame
 
 
-def section301_exposure(
-    database: Path,
-    state: FilterState,
-    reference_csv: Path,
-) -> pd.DataFrame:
-    """Cruza exportações brasileiras aos EUA com as isenções do Anexo II por SH6."""
-    if state.year is None:
-        raise ValueError("Selecione um ano.")
-    if not reference_csv.exists():
-        raise FileNotFoundError(f"Referência da Seção 301 não encontrada: {reference_csv}")
-
-    export_state = replace(state, flow="EXP")
-    where, params = _where(export_state)
-    with _connect(database) as con:
-        exports = con.execute(
-            f"""
-            SELECT
-                SETOR,
-                CATEGORIA_USO,
-                CO_NCM,
-                coalesce(NO_NCM_POR, CO_NCM) AS NO_NCM_POR,
-                CO_SH6,
-                coalesce(NO_SH6_POR, CO_SH6) AS NO_SH6_POR,
-                sum(VL_FOB) AS VL_FOB,
-                sum(KG_LIQUIDO) AS KG_LIQUIDO
-            FROM vw_comex
-            WHERE {where}
-              AND CO_PAIS_ISOA3 = 'USA'
-              AND CO_SH6 IS NOT NULL
-            GROUP BY SETOR, CATEGORIA_USO, CO_NCM, NO_NCM_POR, CO_SH6, NO_SH6_POR
-            ORDER BY VL_FOB DESC NULLS LAST
-            """,
-            params,
-        ).df()
+def _apply_section301_reference(exports: pd.DataFrame, reference_csv: Path) -> pd.DataFrame:
+    """Aplica a classificação indicativa do Anexo II a uma agregação com CO_SH6."""
     if exports.empty:
         return exports
-
     reference = pd.read_csv(
         reference_csv,
         sep=";",
@@ -315,6 +282,123 @@ def section301_exposure(
     for column in ("CODIGOS_HTSUS", "DESCRICAO_HTSUS_EXEMPLO", "LIMITACOES_PT"):
         merged[column] = merged[column].fillna("")
     return merged.sort_values("VL_FOB", ascending=False, na_position="last")
+
+
+def section301_exposure(
+    database: Path,
+    state: FilterState,
+    reference_csv: Path,
+) -> pd.DataFrame:
+    """Cruza exportações brasileiras aos EUA com as isenções do Anexo II por SH6."""
+    if state.year is None:
+        raise ValueError("Selecione um ano.")
+    if not reference_csv.exists():
+        raise FileNotFoundError(f"Referência da Seção 301 não encontrada: {reference_csv}")
+
+    export_state = replace(state, flow="EXP")
+    where, params = _where(export_state)
+    with _connect(database) as con:
+        exports = con.execute(
+            f"""
+            SELECT
+                SETOR,
+                CATEGORIA_USO,
+                CO_NCM,
+                coalesce(NO_NCM_POR, CO_NCM) AS NO_NCM_POR,
+                CO_SH6,
+                coalesce(NO_SH6_POR, CO_SH6) AS NO_SH6_POR,
+                sum(VL_FOB) AS VL_FOB,
+                sum(KG_LIQUIDO) AS KG_LIQUIDO
+            FROM vw_comex
+            WHERE {where}
+              AND CO_PAIS_ISOA3 = 'USA'
+              AND CO_SH6 IS NOT NULL
+            GROUP BY SETOR, CATEGORIA_USO, CO_NCM, NO_NCM_POR, CO_SH6, NO_SH6_POR
+            ORDER BY VL_FOB DESC NULLS LAST
+            """,
+            params,
+        ).df()
+    return _apply_section301_reference(exports, reference_csv)
+
+
+def section301_state_products(
+    database: Path,
+    state: FilterState,
+    reference_csv: Path,
+    uf: str,
+    level: str = "SH6",
+) -> pd.DataFrame:
+    """Detalha os produtos exportados aos EUA por UF, em SH6 ou NCM."""
+    if state.year is None:
+        raise ValueError("Selecione um ano.")
+    if not reference_csv.exists():
+        raise FileNotFoundError(f"Referência da Seção 301 não encontrada: {reference_csv}")
+    if level not in {"SH6", "NCM"}:
+        raise ValueError(f"Nível de produto inválido: {level}")
+
+    export_state = replace(state, flow="EXP")
+    where, params = _where(export_state)
+    params = [*params, uf]
+    if level == "SH6":
+        select_dimensions = """
+            CO_SH6,
+            coalesce(NO_SH6_POR, CO_SH6) AS NO_SH6_POR,
+            CO_SH6 AS CODIGO,
+            coalesce(NO_SH6_POR, CO_SH6) AS DESCRICAO,
+            string_agg(DISTINCT SETOR, ' / ' ORDER BY SETOR) AS SETOR,
+            string_agg(DISTINCT CATEGORIA_USO, ' / ' ORDER BY CATEGORIA_USO)
+                AS CATEGORIA_USO,
+            count(DISTINCT CO_NCM) AS NCMS
+        """
+        group_dimensions = "CO_SH6, NO_SH6_POR"
+    else:
+        select_dimensions = """
+            CO_SH6,
+            coalesce(NO_SH6_POR, CO_SH6) AS NO_SH6_POR,
+            CO_NCM AS CODIGO,
+            coalesce(NO_NCM_POR, CO_NCM) AS DESCRICAO,
+            string_agg(DISTINCT SETOR, ' / ' ORDER BY SETOR) AS SETOR,
+            string_agg(DISTINCT CATEGORIA_USO, ' / ' ORDER BY CATEGORIA_USO)
+                AS CATEGORIA_USO,
+            1::BIGINT AS NCMS
+        """
+        group_dimensions = "CO_SH6, NO_SH6_POR, CO_NCM, NO_NCM_POR"
+
+    with _connect(database) as con:
+        exports = con.execute(
+            f"""
+            SELECT
+                {select_dimensions},
+                sum(VL_FOB) AS VL_FOB,
+                sum(KG_LIQUIDO) AS KG_LIQUIDO
+            FROM vw_comex
+            WHERE {where}
+              AND CO_PAIS_ISOA3 = 'USA'
+              AND CO_SH6 IS NOT NULL
+              AND coalesce(nullif(trim(SG_UF_NCM), ''), 'Não informado') = ?
+            GROUP BY {group_dimensions}
+            ORDER BY VL_FOB DESC NULLS LAST
+            """,
+            params,
+        ).df()
+    products = _apply_section301_reference(exports, reference_csv)
+    if products.empty:
+        return products
+    affected = products["SITUACAO_301"].eq("Sem correspondência - potencialmente afetado")
+    products["TONELADAS_EUA"] = products["KG_LIQUIDO"] / 1000
+    products["VALOR_POTENCIALMENTE_AFETADO"] = products["VL_FOB"].where(affected, 0)
+    products["TONELADAS_POTENCIALMENTE_AFETADAS"] = products["TONELADAS_EUA"].where(
+        affected, 0
+    )
+    total_affected = products["VALOR_POTENCIALMENTE_AFETADO"].sum(min_count=1)
+    products["PARTICIPACAO_NO_AFETADO_UF"] = (
+        products["VALOR_POTENCIALMENTE_AFETADO"] / total_affected
+        if total_affected and total_affected > 0
+        else pd.NA
+    )
+    return products.sort_values(
+        ["VALOR_POTENCIALMENTE_AFETADO", "VL_FOB"], ascending=False, na_position="last"
+    )
 
 
 def section301_sector_impact(

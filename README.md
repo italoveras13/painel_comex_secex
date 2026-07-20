@@ -88,7 +88,8 @@ A aba temática foi organizada em sete subabas:
   SH6 mais expostos dentro de cada setor;
 - `Estados exportadores`: exportações totais de cada UF, vendas e participação
   dos EUA, valor potencialmente afetado, ranking de exposição e comparação
-  entre dependência do mercado americano e alcance potencial das tarifas;
+  entre dependência do mercado americano e alcance potencial das tarifas. A
+  subaba permite selecionar uma UF e detalhar os SH6 ou NCM com maior exposição;
 - `Categoria de uso`: tabelas por CGCE — bens de capital, intermediários, de
   consumo e combustíveis e lubrificantes — com abertura até o NCM;
 - `Produtos NCM`: triagem detalhada e exportação em CSV;

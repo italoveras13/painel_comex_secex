@@ -38,6 +38,7 @@ from src.queries import (
     section301_exposure,
     section301_sector_impact,
     section301_state_impact,
+    section301_state_products,
     summary_metrics,
     trade_balance_by_country,
 )
@@ -305,6 +306,21 @@ def cached_section301_states(
     reference_version: tuple[int, int],
 ) -> pd.DataFrame:
     return section301_state_impact(Path(database), state, Path(reference_csv))
+
+
+@st.cache_data(show_spinner=False)
+def cached_section301_state_products(
+    database: str,
+    state: FilterState,
+    reference_csv: str,
+    uf: str,
+    level: str,
+    db_version: tuple[int, int],
+    reference_version: tuple[int, int],
+) -> pd.DataFrame:
+    return section301_state_products(
+        Path(database), state, Path(reference_csv), uf=uf, level=level
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -1642,6 +1658,158 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
                 st.caption(
                     "O tamanho da bolha representa o valor potencialmente afetado. Em vermelho, "
                     "UFs nas quais os Estados Unidos são o maior destino das exportações."
+                )
+
+            st.markdown("#### Produtos com maior exposição por UF")
+            state_labels = dict(zip(
+                identified_states["UF"], identified_states["UF_LABEL"], strict=False
+            ))
+            state_options = (
+                identified_states.sort_values(
+                    "VALOR_POTENCIALMENTE_AFETADO", ascending=False
+                )["UF"].tolist()
+            )
+            product_control, level_control, amount_control = st.columns([1.4, 1, 1])
+            selected_uf = product_control.selectbox(
+                "Unidade da Federação",
+                state_options,
+                format_func=lambda code: state_labels.get(code, code),
+                key="section301_state_product_uf",
+            )
+            product_level = level_control.radio(
+                "Detalhamento",
+                ["SH6", "NCM"],
+                horizontal=True,
+                key="section301_state_product_level",
+            )
+            state_product_top = amount_control.selectbox(
+                "Itens no gráfico",
+                [10, 15, 20, 30],
+                index=1,
+                key="section301_state_product_top",
+            )
+            state_products = cached_section301_state_products(
+                str(DATABASE), state, str(SECTION301_REFERENCE), selected_uf,
+                product_level, db_version, reference_version,
+            )
+            if state_products.empty:
+                st.info("Não há produtos exportados aos EUA para a UF e o recorte selecionados.")
+            else:
+                state_row = identified_states.loc[identified_states["UF"] == selected_uf].iloc[0]
+                affected_products = state_products.loc[
+                    state_products["VALOR_POTENCIALMENTE_AFETADO"] > 0
+                ].copy()
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric(
+                    f"Exportações de {selected_uf} aos EUA",
+                    format_compact(state_row["EXPORTACOES_EUA"], "US$ "),
+                )
+                p2.metric(
+                    "Valor potencialmente afetado",
+                    format_compact(state_row["VALOR_POTENCIALMENTE_AFETADO"], "US$ "),
+                )
+                p3.metric(
+                    "Parcela das vendas aos EUA",
+                    f"{state_row['PARTICIPACAO_AFETADA_NOS_EUA']:.1%}".replace(".", ","),
+                )
+                p4.metric(
+                    f"{product_level} potencialmente afetados",
+                    f"{len(affected_products):,}".replace(",", "."),
+                )
+
+                if affected_products.empty:
+                    st.info(
+                        f"Não foram encontrados {product_level} sem correspondência de isenção "
+                        f"para {state_labels.get(selected_uf, selected_uf)}."
+                    )
+                else:
+                    affected_products["ROTULO"] = (
+                        affected_products["DESCRICAO"].astype(str).str.slice(0, 58)
+                        + " · " + affected_products["CODIGO"].astype(str)
+                    )
+                    chart_products = affected_products.rename(
+                        columns={
+                            "PARTICIPACAO_NO_AFETADO_UF": "PARTICIPACAO_NO_AFETADO_BRASIL"
+                        }
+                    )
+                    st.plotly_chart(
+                        section301_impact_ranking_plotly(
+                            chart_products,
+                            "ROTULO",
+                            f"{product_level} com maior valor potencialmente afetado — "
+                            f"{state_labels.get(selected_uf, selected_uf)}",
+                            top_n=state_product_top,
+                            color="#9C3D2E",
+                        ),
+                        use_container_width=True,
+                        config={"displaylogo": False},
+                    )
+
+                show_only_affected = st.toggle(
+                    "Mostrar somente produtos potencialmente afetados",
+                    True,
+                    key="section301_state_product_only_affected",
+                )
+                product_table = affected_products if show_only_affected else state_products.copy()
+                product_table["SITUACAO"] = product_table["SITUACAO_301"].map(status_labels)
+                table_columns = [
+                    "SETOR", "CATEGORIA_USO", "CODIGO", "DESCRICAO",
+                ]
+                if product_level == "SH6":
+                    table_columns.append("NCMS")
+                else:
+                    table_columns.extend(["CO_SH6", "NO_SH6_POR"])
+                table_columns += [
+                    "VL_FOB", "TONELADAS_EUA", "VALOR_POTENCIALMENTE_AFETADO",
+                    "TONELADAS_POTENCIALMENTE_AFETADAS", "PARTICIPACAO_FOB_EUA",
+                    "PARTICIPACAO_NO_AFETADO_UF", "SITUACAO", "LIMITACOES_PT",
+                ]
+                st.dataframe(
+                    product_table[table_columns],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=560,
+                    column_config={
+                        "SETOR": st.column_config.TextColumn("Setor", width="medium"),
+                        "CATEGORIA_USO": st.column_config.TextColumn("Categoria de uso", width="medium"),
+                        "CODIGO": product_level,
+                        "DESCRICAO": st.column_config.TextColumn(
+                            f"Descrição {product_level}", width="large"
+                        ),
+                        "NCMS": "Quantidade de NCM",
+                        "CO_SH6": "SH6",
+                        "NO_SH6_POR": st.column_config.TextColumn("Descrição SH6", width="large"),
+                        "VL_FOB": st.column_config.NumberColumn(
+                            "Exportações aos EUA (US$)", format="localized"
+                        ),
+                        "TONELADAS_EUA": st.column_config.NumberColumn(
+                            "Volume aos EUA (t)", format="localized"
+                        ),
+                        "VALOR_POTENCIALMENTE_AFETADO": st.column_config.NumberColumn(
+                            "Potencialmente afetado (US$)", format="localized"
+                        ),
+                        "TONELADAS_POTENCIALMENTE_AFETADAS": st.column_config.NumberColumn(
+                            "Volume potencial (t)", format="localized"
+                        ),
+                        "PARTICIPACAO_FOB_EUA": st.column_config.NumberColumn(
+                            "Participação nas vendas da UF aos EUA", format="percent"
+                        ),
+                        "PARTICIPACAO_NO_AFETADO_UF": st.column_config.NumberColumn(
+                            "Participação no valor afetado da UF", format="percent"
+                        ),
+                        "SITUACAO": st.column_config.TextColumn(
+                            "Situação potencial", width="medium"
+                        ),
+                        "LIMITACOES_PT": st.column_config.TextColumn(
+                            "Limitação da isenção", width="large"
+                        ),
+                    },
+                )
+                st.download_button(
+                    f"Baixar produtos de {selected_uf} em CSV",
+                    product_table.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig"),
+                    file_name=f"secao301_{selected_uf.lower()}_{product_level.lower()}_{state.year}.csv",
+                    mime="text/csv",
                 )
 
             st.markdown("#### Tabela comparativa por unidade da Federação")

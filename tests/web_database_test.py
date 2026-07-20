@@ -20,6 +20,7 @@ from src.queries import (  # noqa: E402
     hierarchy_table,
     monthly_history,
     section301_state_impact,
+    section301_state_products,
     summary_metrics,
 )
 from src.web_database import build_web_database  # noqa: E402
@@ -121,6 +122,28 @@ def main() -> None:
         assert abs(states.loc["SP", "PARTICIPACAO_EUA"] - (1 / 3)) < 1e-9
         assert abs(states.loc["SP", "EXPOSICAO_EXPORTACOES_UF"] - (1 / 3)) < 1e-9
         assert abs(states.loc["MG", "PARTICIPACAO_NO_AFETADO_BRASIL"] - 0.6) < 1e-9
+
+        sp_sh6 = section301_state_products(
+            output,
+            state,
+            ROOT / "data" / "reference" / "section301_exemptions_sh6.csv",
+            uf="SP",
+            level="SH6",
+        ).set_index("CODIGO")
+        assert sp_sh6.loc["010101", "VL_FOB"] == 100
+        assert sp_sh6.loc["010101", "VALOR_POTENCIALMENTE_AFETADO"] == 100
+        assert sp_sh6.loc["010101", "PARTICIPACAO_NO_AFETADO_UF"] == 1
+
+        go_ncm = section301_state_products(
+            output,
+            state,
+            ROOT / "data" / "reference" / "section301_exemptions_sh6.csv",
+            uf="GO",
+            level="NCM",
+        ).set_index("CODIGO")
+        assert go_ncm.loc["02011000", "VL_FOB"] == 300
+        assert go_ncm.loc["02011000", "VALOR_POTENCIALMENTE_AFETADO"] == 0
+        assert go_ncm.loc["02011000", "SITUACAO_301"] == "Correspondência com isenção no SH6"
     print("Teste do comex_web.duckdb concluído com sucesso.")
 
 
