@@ -1280,8 +1280,8 @@ def _section301(state: FilterState, db_version: tuple[int, int]) -> None:
     st.markdown(
         """
         <div class="executive-banner">
-          <strong>Nota de leitura:</strong> “potencialmente afetado” significa que não foi encontrada
-          correspondência de isenção no mesmo SH6. É uma aproximação econômica e não substitui
+          <strong>Nota:</strong> “potencialmente afetado” significa que não foi encontrada
+          correspondência de isenção no mesmo SH6. É uma aproximação e não substitui
           a análise aduaneira ou jurídica. Esta aba sempre utiliza
           exportações, independentemente do fluxo selecionado na barra lateral.
         </div>
