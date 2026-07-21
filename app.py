@@ -2062,7 +2062,7 @@ def main() -> None:
     with tab_quality:
         _quality(db_version)
     st.markdown(
-        '<div class="footer-note">Dados: SECEX/Comex Stat · Elaboração própria · Valores em dólares FOB</div>',
+        '<div class="footer-note">Dados: SECEX/Comex Stat · Valores em dólares FOB</div>',
         unsafe_allow_html=True,
     )
 
